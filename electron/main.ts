@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  BrowserView,
   ipcMain,
   ipcRenderer,
   Tray,
@@ -37,6 +38,7 @@ logToFile(`Log file location: ${logFile}`);
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let contentView: BrowserView | null = null;
 
 // Data storage setup
 const userDataPath = app.getPath("userData");
@@ -196,14 +198,6 @@ function createWindow(): void {
         }
         return { action: "deny" };
       });
-
-      // Log navigation for debugging
-      contents.on(
-        "did-start-navigation",
-        (event, url, isInPlace, isMainFrame) => {
-          console.log("Navigation started:", { url, isInPlace, isMainFrame });
-        }
-      );
     }
   });
 
@@ -286,9 +280,149 @@ app.commandLine.appendSwitch("no-sandbox");
 app.commandLine.appendSwitch("v", "0");
 app.commandLine.appendSwitch("enable-logging", "false");
 
+// Register IPC handlers
+const registerIpcHandlers = () => {
+  ipcMain.handle("browser-window:create", async (event, { url }) => {
+    try {
+      if (contentView) {
+        mainWindow?.removeBrowserView(contentView);
+        contentView = null;
+      }
+
+      contentView = new BrowserView({
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          webSecurity: true,
+        },
+      });
+
+      mainWindow?.addBrowserView(contentView);
+
+      // Add navigation event handlers
+      if (contentView) {
+        contentView.webContents.on("did-start-loading", () => {
+          mainWindow?.webContents.send("browser-view:loading", true);
+        });
+
+        contentView.webContents.on("did-stop-loading", () => {
+          mainWindow?.webContents.send("browser-view:loading", false);
+        });
+
+        contentView.webContents.on("did-navigate", (_, url) => {
+          mainWindow?.webContents.send("browser-view:url-changed", {
+            url,
+            canGoBack: contentView?.webContents.canGoBack(),
+            canGoForward: contentView?.webContents.canGoForward(),
+          });
+        });
+
+        // Add this handler for in-page navigation
+        contentView.webContents.on("did-navigate-in-page", (_, url) => {
+          mainWindow?.webContents.send("browser-view:url-changed", {
+            url,
+            canGoBack: contentView?.webContents.canGoBack(),
+            canGoForward: contentView?.webContents.canGoForward(),
+          });
+        });
+      }
+
+      // Add new-window handler
+      contentView.webContents.setWindowOpenHandler(({ url }) => {
+        // Load URL in the same view instead of new window
+        contentView?.webContents.loadURL(url);
+        return { action: "deny" };
+      });
+
+      // Set initial bounds
+      const bounds = mainWindow!.getBounds();
+      contentView.setBounds({
+        x: 250,
+        y: 80,
+        width: bounds.width - 250,
+        height: bounds.height - 80,
+      });
+
+      // Add this after creating the BrowserView
+      contentView.webContents.session.webRequest.onHeadersReceived(
+        (details, callback) => {
+          callback({
+            responseHeaders: {
+              ...details.responseHeaders,
+              "Content-Security-Policy": [
+                "default-src 'self' https: http: data: blob: 'unsafe-inline' 'unsafe-eval';",
+                "media-src 'self' https: http: data: blob:;",
+                "img-src 'self' https: http: data: blob:;",
+                "script-src 'self' https: http: data: 'unsafe-inline' 'unsafe-eval';",
+                "script-src-elem 'self' https: http: data: 'unsafe-inline';",
+                "style-src 'self' https: http: data: 'unsafe-inline';",
+                "style-src-elem 'self' https: http: data: 'unsafe-inline';",
+                "connect-src 'self' https: http: wss: ws:;",
+              ].join("; "),
+            },
+          });
+        }
+      );
+
+      await contentView.webContents.loadURL(url);
+      return contentView.webContents.id;
+    } catch (error) {
+      console.error("Error creating browser view:", error);
+      return null;
+    }
+  });
+
+  ipcMain.handle("browser-window:load-url", async (event, { url }) => {
+    if (!contentView) return;
+    await contentView.webContents.loadURL(url);
+  });
+
+  ipcMain.handle("browser-window:go-back", () => {
+    if (contentView?.webContents.canGoBack()) {
+      contentView.webContents.goBack();
+    }
+  });
+
+  ipcMain.handle("browser-window:go-forward", () => {
+    if (contentView?.webContents.canGoForward()) {
+      contentView.webContents.goForward();
+    }
+  });
+
+  ipcMain.handle("browser-window:reload", () => {
+    contentView?.webContents.reload();
+  });
+
+  ipcMain.handle("browser-window:stop", () => {
+    contentView?.webContents.stop();
+  });
+
+  ipcMain.handle("browser-window:destroy", () => {
+    if (contentView) {
+      mainWindow?.removeBrowserView(contentView);
+      contentView = null;
+    }
+  });
+
+  // Add this to the registerIpcHandlers function
+  ipcMain.handle("browser-window:set-bounds", (event, { bounds }) => {
+    if (!contentView) return;
+
+    contentView.setBounds({
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+    });
+  });
+
+  // ... other handlers ...
+};
+
 app.whenReady().then(() => {
   logToFile("App is ready");
   createWindow();
+  registerIpcHandlers();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -340,3 +474,53 @@ ipcMain.handle("create-directory", (_, dirPath) => {
 ipcMain.handle("delete-file", (_, filePath) => {
   return fs.promises.unlink(filePath);
 });
+
+ipcMain.handle(
+  "content-view-action",
+  async (event, { viewId, action, data }) => {
+    const view = mainWindow?.getBrowserViews()[0];
+
+    if (!view) {
+      console.error("View not found");
+      return;
+    }
+
+    switch (action) {
+      case "loadURL":
+        try {
+          // Configure session
+          const ses = view.webContents.session;
+
+          // Clear existing handlers
+          ses.webRequest.onBeforeSendHeaders(null);
+          ses.webRequest.onHeadersReceived(null);
+
+          // Set secure headers
+          ses.webRequest.onHeadersReceived((details, callback) => {
+            callback({
+              responseHeaders: {
+                ...details.responseHeaders,
+                "Content-Security-Policy":
+                  "default-src 'self' https: data: blob:; " +
+                  "script-src 'self' https: 'unsafe-inline'; " +
+                  "style-src 'self' https: 'unsafe-inline'; " +
+                  "img-src 'self' https: data: blob:; " +
+                  "connect-src 'self' https: wss: ws:;",
+                "X-Content-Type-Options": "nosniff",
+                "X-Frame-Options": "SAMEORIGIN",
+              },
+            });
+          });
+
+          console.log("Loading URL:", data.url);
+          await view.webContents.loadURL(data.url, {
+            userAgent:
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
+          });
+        } catch (error) {
+          console.error("Error loading URL:", error);
+        }
+        break;
+    }
+  }
+);

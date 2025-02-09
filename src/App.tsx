@@ -2,7 +2,7 @@ import React, { useCallback, useRef } from "react";
 import styled from "styled-components";
 import TitleBar from "./components/TitleBar";
 import LeftPanel from "./components/LeftPanel";
-import WebViewContent, { WebViewContentRef } from "./components/WebViewContent";
+import BrowserViewContent from "./components/BrowserViewContent";
 
 const AppContainer = styled.div`
   height: 100vh;
@@ -17,19 +17,9 @@ const MainContent = styled.div`
 `;
 
 function App() {
-  const webviewRef = useRef<WebViewContentRef>(null);
-
   const handleUrlOpen = useCallback((url: string) => {
-    console.log("handleUrlOpen", url);
-    webviewRef.current?.loadURL(url);
-  }, []);
-
-  const getCurrentWebViewData = useCallback(async () => {
-    return webviewRef.current?.getCurrentData() || null;
-  }, []);
-
-  const generateThumbnail = useCallback(async () => {
-    return webviewRef.current?.generateThumbnail() || "";
+    console.log("Opening URL:", url);
+    window.electron.invoke("browser-window:load-url", { url });
   }, []);
 
   return (
@@ -38,10 +28,10 @@ function App() {
       <MainContent>
         <LeftPanel
           onUrlOpen={handleUrlOpen}
-          getCurrentWebViewData={getCurrentWebViewData}
-          generateThumbnail={generateThumbnail}
+          getCurrentWebViewData={() => ({})}
+          generateThumbnail={() => Promise.resolve("")}
         />
-        <WebViewContent ref={webviewRef} />
+        <BrowserViewContent />
       </MainContent>
     </AppContainer>
   );
