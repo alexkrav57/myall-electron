@@ -25,29 +25,28 @@ const BrowserViewContent = () => {
     const container = containerRef.current;
     if (!container) return;
 
-    // Create BrowserView
-    window.electron.invoke("browser-window:create", {
-      url: "https://www.google.com",
-      bounds: container.getBoundingClientRect(),
-    });
-
-    // Handle resize
-    const resizeObserver = new ResizeObserver((entries) => {
-      const domBounds = entries[0].target.getBoundingClientRect();
+    const updateBounds = () => {
+      const domBounds = container.getBoundingClientRect();
       const bounds = {
         x: domBounds.x,
         y: domBounds.y,
         width: domBounds.width,
         height: domBounds.height,
       };
-      console.log("ResizeObserver triggered, sending bounds:", bounds);
       window.electron
         .invoke("browser-window:set-bounds", { bounds })
-        .then(() => console.log("set-bounds invoked successfully"))
         .catch((err) => console.error("Error invoking set-bounds:", err));
-    });
+    };
 
+    // Create ResizeObserver
+    const resizeObserver = new ResizeObserver(updateBounds);
     resizeObserver.observe(container);
+
+    // Create BrowserView
+    window.electron.invoke("browser-window:create", {
+      url: "https://www.google.com",
+      bounds: container.getBoundingClientRect(),
+    });
 
     // Add navigation event listeners
     const handleLoading = (isLoading: boolean) => {
@@ -89,6 +88,16 @@ const BrowserViewContent = () => {
       });
     } catch (error) {
       console.error("Error loading URL:", error);
+    }
+  };
+
+  const getCurrentWebViewData = async () => {
+    try {
+      const response = await window.electron.invoke("browser-window:get-data");
+      return response as { url: string; title: string } | null;
+    } catch (error) {
+      console.error("Error getting web view data:", error);
+      return null;
     }
   };
 

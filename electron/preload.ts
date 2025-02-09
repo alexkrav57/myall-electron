@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld("electron", {
       "browser-window:set-bounds",
       "browser-view:loading",
       "browser-view:url-changed",
+      "browser-window:get-data",
+      "browser-window:capture",
     ];
 
     if (validChannels.includes(channel)) {

@@ -48,7 +48,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ title = "My Electron App" }) => {
   };
 
   const close = () => {
-    console.log("Close button clicked"); // Debug log
+    // console.log("Close button clicked"); // Debug log
     window.electron?.closeWindow();
   };
 

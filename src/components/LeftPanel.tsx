@@ -4,7 +4,7 @@ import ListItem from "./ListItem";
 import { usePanelData } from "../hooks/usePanelData";
 import { model } from "../model/model";
 import myallIcon from "../../assets/myall64.svg";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 const PanelContainer = styled.div`
   width: 250px;
@@ -12,10 +12,39 @@ const PanelContainer = styled.div`
   background-color: #ffffff;
   border-right: 1px solid #ddd;
   overflow-y: auto;
+  display: flex;
+  position: relative;
+`;
+
+const ResizeHandle = styled.div`
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  position: absolute;
+  right: -4px;
+  top: 0;
+  background-color: transparent;
+  z-index: 1000;
+
+  &:hover,
+  &:active {
+    background-color: rgba(0, 0, 0, 0.2);
+  }
+
+  &::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 0;
+    width: 1px;
+    height: 100%;
+    background-color: #ddd;
+  }
 `;
 
 const LeftPanelDiv = styled.div`
   height: 100%;
+  width: 100%;
   display: flex;
   flex-direction: column;
 `;
@@ -79,12 +108,14 @@ interface LeftPanelProps {
   onUrlOpen: (url: string) => void;
   getCurrentWebViewData: () => Promise<{ url: string; title: string } | null>;
   generateThumbnail: () => Promise<string>;
+  onWidthChange?: (width: number) => void;
 }
 
 const LeftPanel: React.FC<LeftPanelProps> = ({
   onUrlOpen,
   getCurrentWebViewData,
   generateThumbnail,
+  onWidthChange,
 }) => {
   const {
     categories,
@@ -99,7 +130,11 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
     refreshThumbnails,
   } = usePanelData();
 
-  // Add these debug logs
+  const [width, setWidth] = useState(250);
+  const isResizing = useRef(false);
+  const startX = useRef(0);
+  const startWidth = useRef(0);
+
   const selectedItemRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -113,8 +148,18 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   };
 
   const handleGrabUrl = async (): Promise<void> => {
-    const data = await getCurrentWebViewData();
-    if (data) {
+    try {
+      const data = await getCurrentWebViewData();
+      if (!data) {
+        console.log("No web view data available");
+        return;
+      }
+
+      if (categories.length === 0) {
+        console.log("No categories available");
+        return;
+      }
+
       const targetCategoryId = categories[categories.length - 1].id;
 
       if (!expandedCategories.includes(targetCategoryId)) {
@@ -123,7 +168,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
 
       const newItem = await addItem({
         categoryId: targetCategoryId,
-        title: data.title,
+        title: data.title || "Untitled",
         description: getSiteName(data.url),
         url: data.url,
         icon: "🌐",
@@ -131,15 +176,19 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
 
       if (newItem?.id) {
         selectItem(newItem.id);
-      }
 
-      if (!(await model.hasThumbData(data.url))) {
-        const thumbnail = await generateThumbnail();
-        if (thumbnail) {
-          await model.setThumbDataForUrl(data.url, thumbnail);
-          refreshThumbnails();
+        if (!(await model.hasThumbData(data.url))) {
+          const thumbnail = await generateThumbnail();
+          if (thumbnail) {
+            await model.setThumbDataForUrl(data.url, thumbnail);
+            refreshThumbnails();
+          }
         }
+      } else {
+        console.error("Failed to create new item");
       }
+    } catch (error) {
+      console.error("Error in handleGrabUrl:", error);
     }
   };
 
@@ -183,8 +232,36 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
     }
   }, [selectedItem, items, onUrlOpen]);
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    isResizing.current = true;
+    startX.current = e.clientX;
+    startWidth.current = width;
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing.current) return;
+      const newWidth = startWidth.current + (e.clientX - startX.current);
+      const finalWidth = Math.max(200, Math.min(500, newWidth));
+      setWidth(finalWidth);
+      onWidthChange?.(finalWidth);
+    };
+
+    const handleMouseUp = () => {
+      isResizing.current = false;
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [onWidthChange]);
+
   return (
-    <PanelContainer>
+    <PanelContainer style={{ width: `${width}px` }}>
       <LeftPanelDiv>
         <PanelHeader>
           <Logo src={myallIcon} alt="MyAll" />
@@ -228,6 +305,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
           })}
         </CategoriesContainer>
       </LeftPanelDiv>
+      <ResizeHandle onMouseDown={handleMouseDown} />
     </PanelContainer>
   );
 };

@@ -16,25 +16,45 @@ const MainContent = styled.div`
   overflow: hidden;
 `;
 
-function App() {
-  const handleUrlOpen = useCallback((url: string) => {
+const App = () => {
+  const handleUrlOpen = (url: string) => {
     console.log("Opening URL:", url);
     window.electron.invoke("browser-window:load-url", { url });
-  }, []);
+  };
+
+  const getCurrentWebViewData = async () => {
+    try {
+      const response = await window.electron.invoke("browser-window:get-data");
+      return response as { url: string; title: string } | null;
+    } catch (error) {
+      console.error("Error getting web view data:", error);
+      return null;
+    }
+  };
+
+  const generateThumbnail = async () => {
+    try {
+      const response = await window.electron.invoke("browser-window:capture");
+      return response as string;
+    } catch (error) {
+      console.error("Error generating thumbnail:", error);
+      return "";
+    }
+  };
 
   return (
     <AppContainer>
-      <TitleBar title="MyAll app" />
+      <TitleBar />
       <MainContent>
         <LeftPanel
           onUrlOpen={handleUrlOpen}
-          getCurrentWebViewData={() => ({})}
-          generateThumbnail={() => Promise.resolve("")}
+          getCurrentWebViewData={getCurrentWebViewData}
+          generateThumbnail={generateThumbnail}
         />
         <BrowserViewContent />
       </MainContent>
     </AppContainer>
   );
-}
+};
 
 export default App;

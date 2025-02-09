@@ -143,9 +143,13 @@ function createWindow(): void {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        // Fix: Use string instead of array for CSP
-        "Content-Security-Policy":
-          "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: https: http:; frame-ancestors *",
+        "Content-Security-Policy": [
+          "default-src 'self' 'unsafe-inline';",
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval';",
+          "style-src 'self' 'unsafe-inline';",
+          "img-src 'self' data: https:;",
+          "connect-src 'self' https:;",
+        ].join("; "),
       },
     });
   });
@@ -158,11 +162,8 @@ function createWindow(): void {
       contextIsolation: true,
       preload: path.join(__dirname, "preload.js"),
       webviewTag: true,
-      webSecurity: false, // Keep this for now
-      allowRunningInsecureContent: true,
+      webSecurity: true, // Enable web security
       sandbox: true,
-      // Prevent script injection
-      additionalArguments: ["--disable-site-isolation-trials"],
     },
   });
 
@@ -350,14 +351,13 @@ const registerIpcHandlers = () => {
             responseHeaders: {
               ...details.responseHeaders,
               "Content-Security-Policy": [
-                "default-src 'self' https: http: data: blob: 'unsafe-inline' 'unsafe-eval';",
-                "media-src 'self' https: http: data: blob:;",
+                "default-src 'self' https: http: data: blob:;",
+                "script-src 'self' https: http: 'unsafe-inline' 'unsafe-eval';",
+                "style-src 'self' https: http: 'unsafe-inline';",
                 "img-src 'self' https: http: data: blob:;",
-                "script-src 'self' https: http: data: 'unsafe-inline' 'unsafe-eval';",
-                "script-src-elem 'self' https: http: data: 'unsafe-inline';",
-                "style-src 'self' https: http: data: 'unsafe-inline';",
-                "style-src-elem 'self' https: http: data: 'unsafe-inline';",
+                "media-src 'self' https: http: data: blob:;",
                 "connect-src 'self' https: http: wss: ws:;",
+                "frame-src 'self' https: http:;",
               ].join("; "),
             },
           });
@@ -414,6 +414,35 @@ const registerIpcHandlers = () => {
       width: bounds.width,
       height: bounds.height,
     });
+  });
+
+  ipcMain.handle("browser-window:get-data", async () => {
+    if (!contentView) return null;
+
+    try {
+      const url = contentView.webContents.getURL();
+      const title = contentView.webContents.getTitle();
+      return { url, title };
+    } catch (error) {
+      console.error("Error getting browser view data:", error);
+      return null;
+    }
+  });
+
+  ipcMain.handle("browser-window:capture", async () => {
+    if (!contentView) return null;
+    try {
+      const image = await contentView.webContents.capturePage();
+      const thumbnail = image.resize({
+        width: 320,
+        height: 180,
+        quality: "good",
+      });
+      return thumbnail.toDataURL();
+    } catch (error) {
+      console.error("Error capturing page:", error);
+      return null;
+    }
   });
 
   // ... other handlers ...
@@ -512,7 +541,6 @@ ipcMain.handle(
             });
           });
 
-          console.log("Loading URL:", data.url);
           await view.webContents.loadURL(data.url, {
             userAgent:
               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
