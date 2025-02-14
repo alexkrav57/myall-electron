@@ -112,35 +112,6 @@ const ItemContainer = styled.div`
   }
 `;
 
-const ModalOverlay = styled.div`
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-`;
-
-const ModalContent = styled.div`
-  background: white;
-  padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  max-width: 300px;
-  width: 100%;
-`;
-
-const ModalButtons = styled.div`
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
-`;
-
 const Button = styled.button<{ $isDelete?: boolean }>`
   padding: 6px 12px;
   border: none;
@@ -160,8 +131,10 @@ const ListItem = forwardRef<HTMLDivElement, ListItemProps>((props, ref) => {
   const [thumbnailData, setThumbnailData] = useState<string | null>(null);
 
   const handleDelete = (e: React.MouseEvent) => {
+    console.log("ListItem: handleDelete: Deleting item:", item.title);
     e.stopPropagation();
-    setShowDeleteModal(true);
+    props.onDelete();
+    // setShowDeleteModal(true);
   };
 
   const confirmDelete = () => {
@@ -195,21 +168,6 @@ const ListItem = forwardRef<HTMLDivElement, ListItemProps>((props, ref) => {
         <DeleteButton onClick={handleDelete}>×</DeleteButton>
       </ItemContainer>
       {/* </Draggable> */}
-
-      {showDeleteModal && (
-        <ModalOverlay onClick={() => setShowDeleteModal(false)}>
-          <ModalContent onClick={(e) => e.stopPropagation()}>
-            <h3>Delete Item</h3>
-            <p>Are you sure you want to delete "{item.title}"?</p>
-            <ModalButtons>
-              <Button onClick={() => setShowDeleteModal(false)}>Cancel</Button>
-              <Button $isDelete onClick={confirmDelete}>
-                Delete
-              </Button>
-            </ModalButtons>
-          </ModalContent>
-        </ModalOverlay>
-      )}
     </>
   );
 });

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import styled from "styled-components";
 import WebViewToolbar from "./WebViewToolbar";
+import grabIcon from "../../assets/grab-icon.svg";
 
 const Container = styled.div`
   flex: 1;
@@ -14,8 +15,34 @@ const BrowserContainer = styled.div`
   position: relative;
 `;
 
-const BrowserViewContent = () => {
+const FloatingGrabIcon = styled.div`
+  position: fixed;
+  top: 60px; // Below toolbar
+  right: 10px;
+  opacity: 0.2;
+  cursor: pointer;
+  z-index: 999999;
+
+  &:hover {
+    opacity: 1;
+  }
+
+  img {
+    width: 64px;
+    height: 64px;
+    filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.3));
+  }
+`;
+
+interface BrowserViewContentProps {
+  onGrabUrl: () => void;
+}
+
+const BrowserViewContent: React.FC<BrowserViewContentProps> = ({
+  onGrabUrl,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const floatingIconRef = useRef<HTMLDivElement>(null);
   const [currentUrl, setCurrentUrl] = useState("https://www.google.com");
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
@@ -24,6 +51,34 @@ const BrowserViewContent = () => {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
+    console.log("Creating BrowserView...");
+    const bounds = container.getBoundingClientRect();
+    window.electron
+      .invoke("browser-window:create", {
+        url: currentUrl,
+        bounds: {
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+        },
+      })
+      .then((result) => {
+        console.log("BrowserView created, setting ready state");
+        setTimeout(() => {
+          if (floatingIconRef.current) {
+            floatingIconRef.current.style.opacity = "1";
+            floatingIconRef.current.scrollIntoView({
+              behavior: "smooth",
+              block: "center",
+            });
+          }
+        }, 5000);
+      })
+      .catch((error) => {
+        console.error("Error creating BrowserView:", error);
+      });
 
     const updateBounds = () => {
       const domBounds = container.getBoundingClientRect();
@@ -41,12 +96,6 @@ const BrowserViewContent = () => {
     // Create ResizeObserver
     const resizeObserver = new ResizeObserver(updateBounds);
     resizeObserver.observe(container);
-
-    // Create BrowserView
-    window.electron.invoke("browser-window:create", {
-      url: "https://www.google.com",
-      bounds: container.getBoundingClientRect(),
-    });
 
     // Add navigation event listeners
     const handleLoading = (isLoading: boolean) => {
@@ -67,6 +116,7 @@ const BrowserViewContent = () => {
     window.electron.on("browser-view:url-changed", handleUrlChange);
 
     return () => {
+      console.log("Cleaning up BrowserView");
       resizeObserver.disconnect();
       window.electron.invoke("browser-window:destroy");
       window.electron.removeListener("browser-view:loading", handleLoading);
@@ -113,8 +163,9 @@ const BrowserViewContent = () => {
         onGoForward={() => window.electron.invoke("browser-window:go-forward")}
         onReload={() => window.electron.invoke("browser-window:reload")}
         onStopLoading={() => window.electron.invoke("browser-window:stop")}
+        onGrabUrl={onGrabUrl}
       />
-      <BrowserContainer ref={containerRef} />
+      <BrowserContainer ref={containerRef}></BrowserContainer>
     </Container>
   );
 };

@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("electron", {
       "browser-view:url-changed",
       "browser-window:get-data",
       "browser-window:capture",
+      "browser-window:remove-item",
     ];
 
     if (validChannels.includes(channel)) {

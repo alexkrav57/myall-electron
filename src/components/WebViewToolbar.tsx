@@ -1,5 +1,6 @@
 import React, { useState, useRef, KeyboardEvent, useEffect } from "react";
 import styled from "styled-components";
+import grabIcon from "../../assets/grab-icon.svg";
 
 const ToolbarContainer = styled.div`
   display: flex;
@@ -43,6 +44,37 @@ const URLInput = styled.input`
   }
 `;
 
+const GrabButton = styled.button`
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0px;
+  margin-right: 8px;
+  display: flex;
+  align-items: center;
+
+  &:hover {
+    background: #e0e0e0;
+    border-radius: 4px;
+  }
+
+  img {
+    width: 28px;
+    height: 28px;
+  }
+`;
+
+const GrabIcon = styled.img`
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  padding: 4px;
+  &:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+  }
+`;
+
 interface WebViewToolbarProps {
   url: string;
   canGoBack: boolean;
@@ -53,6 +85,7 @@ interface WebViewToolbarProps {
   onGoForward: () => void;
   onReload: () => void;
   onStopLoading: () => void;
+  onGrabUrl?: () => void;
 }
 
 const isValidUrl = (string: string) => {
@@ -74,6 +107,7 @@ const WebViewToolbar: React.FC<WebViewToolbarProps> = ({
   onGoForward,
   onReload,
   onStopLoading,
+  onGrabUrl,
 }) => {
   const [inputUrl, setInputUrl] = useState(url);
   const [isEditing, setIsEditing] = useState(false);
@@ -129,8 +163,15 @@ const WebViewToolbar: React.FC<WebViewToolbarProps> = ({
     setInputUrl(url);
   };
 
+  const handleGrab = () => {
+    onGrabUrl?.();
+  };
+
   return (
     <ToolbarContainer>
+      <GrabButton onClick={handleGrab}>
+        <img src={grabIcon} alt="Grab page" />
+      </GrabButton>
       <NavigationButton
         onClick={onGoBack}
         disabled={!canGoBack}

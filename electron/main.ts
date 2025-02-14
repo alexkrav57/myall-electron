@@ -13,6 +13,7 @@ import {
   MessageChannelMain,
   session,
   shell,
+  contentTracing,
 } from "electron";
 import * as path from "path";
 import * as fs from "fs";
@@ -298,71 +299,25 @@ const registerIpcHandlers = () => {
         },
       });
 
-      mainWindow?.addBrowserView(contentView);
+      if (!mainWindow) return null;
 
-      // Add navigation event handlers
-      if (contentView) {
-        contentView.webContents.on("did-start-loading", () => {
-          mainWindow?.webContents.send("browser-view:loading", true);
-        });
-
-        contentView.webContents.on("did-stop-loading", () => {
-          mainWindow?.webContents.send("browser-view:loading", false);
-        });
-
-        contentView.webContents.on("did-navigate", (_, url) => {
-          mainWindow?.webContents.send("browser-view:url-changed", {
-            url,
-            canGoBack: contentView?.webContents.canGoBack(),
-            canGoForward: contentView?.webContents.canGoForward(),
-          });
-        });
-
-        // Add this handler for in-page navigation
-        contentView.webContents.on("did-navigate-in-page", (_, url) => {
-          mainWindow?.webContents.send("browser-view:url-changed", {
-            url,
-            canGoBack: contentView?.webContents.canGoBack(),
-            canGoForward: contentView?.webContents.canGoForward(),
-          });
-        });
-      }
-
-      // Add new-window handler
-      contentView.webContents.setWindowOpenHandler(({ url }) => {
-        // Load URL in the same view instead of new window
-        contentView?.webContents.loadURL(url);
-        return { action: "deny" };
-      });
+      mainWindow.addBrowserView(contentView);
 
       // Set initial bounds
-      const bounds = mainWindow!.getBounds();
+      const bounds = mainWindow.getBounds();
       contentView.setBounds({
-        x: 250,
-        y: 80,
+        x: 250, // Left panel width
+        y: 120, // Title bar + toolbar height + extra space for overlay
         width: bounds.width - 250,
-        height: bounds.height - 80,
+        height: bounds.height - 120, // Adjusted height
       });
 
-      // Add this after creating the BrowserView
-      contentView.webContents.session.webRequest.onHeadersReceived(
-        (details, callback) => {
-          callback({
-            responseHeaders: {
-              ...details.responseHeaders,
-              "Content-Security-Policy": [
-                "default-src 'self' https: http: data: blob:;",
-                "script-src 'self' https: http: 'unsafe-inline' 'unsafe-eval';",
-                "style-src 'self' https: http: 'unsafe-inline';",
-                "img-src 'self' https: http: data: blob:;",
-                "media-src 'self' https: http: data: blob:;",
-                "connect-src 'self' https: http: wss: ws:;",
-                "frame-src 'self' https: http:;",
-              ].join("; "),
-            },
-          });
-        }
-      );
+      // Make sure BrowserView stays below our overlay
+      contentView.webContents.setZoomFactor(1.0);
+      contentView.setAutoResize({ width: true, height: true });
+
+      // Set background color to help with visual layering
+      contentView.setBackgroundColor("#ffffff");
 
       await contentView.webContents.loadURL(url);
       return contentView.webContents.id;
@@ -373,8 +328,22 @@ const registerIpcHandlers = () => {
   });
 
   ipcMain.handle("browser-window:load-url", async (event, { url }) => {
-    if (!contentView) return;
-    await contentView.webContents.loadURL(url);
+    try {
+      if (!contentView) return;
+
+      // Add navigation event listeners
+      contentView.webContents.on("did-navigate", (event, url) => {
+        mainWindow?.webContents.send("browser-view:url-changed", {
+          url,
+          canGoBack: contentView?.webContents.canGoBack(),
+          canGoForward: contentView?.webContents.canGoForward(),
+        });
+      });
+
+      await contentView.webContents.loadURL(url);
+    } catch (error) {
+      console.error("Error loading URL:", error);
+    }
   });
 
   ipcMain.handle("browser-window:go-back", () => {
@@ -406,7 +375,7 @@ const registerIpcHandlers = () => {
 
   // Add this to the registerIpcHandlers function
   ipcMain.handle("browser-window:set-bounds", (event, { bounds }) => {
-    if (!contentView) return;
+    if (!contentView || !mainWindow) return;
 
     contentView.setBounds({
       x: bounds.x,
@@ -443,6 +412,23 @@ const registerIpcHandlers = () => {
       console.error("Error capturing page:", error);
       return null;
     }
+  });
+
+  ipcMain.handle("browser-window:remove-item", (event, { title }) => {
+    if (!mainWindow) return false;
+
+    const response = dialog.showMessageBoxSync(mainWindow, {
+      type: "question",
+      buttons: ["Cancel", "Delete"],
+      defaultId: 1,
+      title: "Confirm Deletion",
+      message: `Are you sure you want to delete "${title}"?`,
+      detail: "This action cannot be undone.",
+      noLink: true,
+      cancelId: 0,
+    });
+
+    return response === 1;
   });
 
   // ... other handlers ...

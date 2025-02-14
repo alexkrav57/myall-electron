@@ -17,6 +17,8 @@ const MainContent = styled.div`
 `;
 
 const App = () => {
+  const leftPanelRef = useRef<LeftPanel | null>(null);
+
   const handleUrlOpen = (url: string) => {
     console.log("Opening URL:", url);
     window.electron.invoke("browser-window:load-url", { url });
@@ -42,16 +44,21 @@ const App = () => {
     }
   };
 
+  const handleGrabUrl = () => {
+    leftPanelRef.current?.handleGrabUrl();
+  };
+
   return (
     <AppContainer>
-      <TitleBar />
+      <TitleBar title="MyAll app" />
       <MainContent>
         <LeftPanel
+          ref={leftPanelRef}
           onUrlOpen={handleUrlOpen}
           getCurrentWebViewData={getCurrentWebViewData}
           generateThumbnail={generateThumbnail}
         />
-        <BrowserViewContent />
+        <BrowserViewContent onGrabUrl={handleGrabUrl} />
       </MainContent>
     </AppContainer>
   );
