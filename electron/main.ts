@@ -296,12 +296,20 @@ const registerIpcHandlers = () => {
           nodeIntegration: false,
           contextIsolation: true,
           webSecurity: true,
+          webviewTag: true,
+          plugins: true,
+          offscreen: false,
         },
       });
 
       if (!mainWindow) return null;
-
       mainWindow.addBrowserView(contentView);
+
+      // Enable hardware acceleration
+      app.commandLine.appendSwitch("enable-features", "VaapiVideoDecoder");
+      app.commandLine.appendSwitch("ignore-gpu-blacklist");
+      app.commandLine.appendSwitch("enable-gpu-rasterization");
+      app.commandLine.appendSwitch("enable-zero-copy");
 
       // Set initial bounds
       const bounds = mainWindow.getBounds();
@@ -318,6 +326,23 @@ const registerIpcHandlers = () => {
 
       // Set background color to help with visual layering
       contentView.setBackgroundColor("#ffffff");
+
+      contentView.webContents.session.webRequest.onHeadersReceived(
+        (details, callback) => {
+          callback({
+            responseHeaders: {
+              ...details.responseHeaders,
+              "Content-Security-Policy":
+                "default-src * blob: data: filesystem: ws: wss: 'unsafe-inline' 'unsafe-eval';" +
+                "media-src * blob: data: 'unsafe-inline';" +
+                "script-src * blob: data: 'unsafe-inline' 'unsafe-eval';" +
+                "style-src * blob: data: 'unsafe-inline';" +
+                "img-src * blob: data: 'unsafe-inline';" +
+                "font-src * blob: data: 'unsafe-inline';",
+            },
+          });
+        }
+      );
 
       await contentView.webContents.loadURL(url);
       return contentView.webContents.id;
